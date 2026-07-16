@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     } catch (err) {
       // fall through to pdfjs fallback
       // eslint-disable-next-line no-console
-      console.info("api/pdf-parse: pdf-parse failed, falling back to pdfjs", { err: err?.message ?? String(err) });
+      console.info("api/pdf-parse: pdf-parse failed, falling back to pdfjs", { err: (err as any)?.message ?? String(err) });
     }
 
     // Fallback: pdfjs-dist text extraction (dynamically imported to avoid
@@ -58,12 +58,12 @@ export async function POST(req: Request) {
       });
     } catch (pdfjsErr) {
       // eslint-disable-next-line no-console
-      console.error("api/pdf-parse: pdfjs fallback failed", { message: pdfjsErr?.message ?? String(pdfjsErr), stack: pdfjsErr?.stack ?? null });
+      console.error("api/pdf-parse: pdfjs fallback failed", { message: (pdfjsErr as any)?.message ?? String(pdfjsErr), stack: (pdfjsErr as any)?.stack ?? null });
       return new Response(JSON.stringify({ error: "Failed to parse PDF" }), { status: 500, headers: { "Content-Type": "application/json" } });
     }
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error("api/pdf-parse: unexpected error", { error: err });
-    return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ error: String((err as any) ?? err) }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 }
