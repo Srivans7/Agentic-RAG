@@ -142,6 +142,40 @@ async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | U
           error: err,
         });
 
+        // Try a pure-JS fallback using `pdfjs-dist` which extracts text without
+        // requiring native rendering dependencies. Use a runtime import to
+        // avoid static bundlers evaluating the package at build time.
+        try {
+          // eslint-disable-next-line no-new-func
+          const dynamicImport: any = Function("specifier", "return import(specifier)");
+          const pdfjs = (await dynamicImport("pdfjs-dist/legacy/build/pdf.js")).default;
+
+          const loadingTask = pdfjs.getDocument({ data: Buffer.from(bytes) });
+          const pdfDoc = await loadingTask.promise;
+          const numPages = pdfDoc.numPages || 0;
+          const extracted: string[] = [];
+
+          for (let p = 1; p <= numPages; p += 1) {
+            const page = await pdfDoc.getPage(p);
+            const content = await page.getTextContent();
+            const pageText = content.items.map((item: any) => (item.str ? String(item.str) : "")).join(" ");
+            if (pageText.trim()) extracted.push(pageText.trim());
+          }
+
+          const full = extracted.join("\n\n").trim();
+          if (full) return full;
+
+          // If pdfjs returned empty text, fall through to throw below.
+        } catch (fallbackErr) {
+          // eslint-disable-next-line no-console
+          console.error("ragService.extractDocumentText: pdfjs-dist fallback failed", {
+            fileName,
+            message: fallbackErr?.message ?? String(fallbackErr),
+            stack: fallbackErr?.stack ?? null,
+            error: fallbackErr,
+          });
+        }
+
         throw new Error(`Failed to parse PDF content: ${err?.message ?? String(err)}`);
       }
     }
