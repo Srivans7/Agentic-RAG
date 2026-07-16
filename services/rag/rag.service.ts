@@ -81,25 +81,39 @@ async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | U
   const buffer = fileBuffer instanceof Blob ? await fileBuffer.arrayBuffer() : fileBuffer;
   const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
 
-  if (extension === "pdf") {
-    try {
-      const pdfModule = await import("pdf-parse");
-      const pdf = (pdfModule as any).default ?? pdfModule;
-      const parsed = await pdf(Buffer.from(bytes));
-      if (parsed.text && parsed.text.trim()) {
-        return parsed.text.trim();
-      }
-      // If pdf-parse returned empty text, fallthrough to pdfjs fallback.
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn("ragService.extractDocumentText: pdf-parse failed, will try pdfjs fallback", {
-        fileName,
-        error: err,
-      });
-    }
+    if (extension === "pdf") {
+      try {
+        const pdfModule = await import("pdf-parse");
+        const pdf = (pdfModule as any).default ?? pdfModule;
+        const parsed = await pdf(Buffer.from(bytes));
+        if (parsed.text && parsed.text.trim()) {
+          return parsed.text.trim();
+        }
+        // If pdf-parse returned empty text, surface a detailed error below.
+        const detail = `pdf-parse produced empty text for ${fileName}`;
+        // eslint-disable-next-line no-console
+        console.error("ragService.extractDocumentText: pdf-parse returned empty text", {
+          fileName,
+          detail,
+          parsedSummary: {
+            numPages: (parsed && (parsed as any).numpages) ?? null,
+            info: (parsed && (parsed as any).info) ?? null,
+          },
+        });
+        throw new Error(detail);
+      } catch (err: any) {
+        // Log full error details (message + stack) to help debugging in server logs.
+        // eslint-disable-next-line no-console
+        console.error("ragService.extractDocumentText: pdf-parse failed", {
+          fileName,
+          message: err?.message ?? String(err),
+          stack: err?.stack ?? null,
+          error: err,
+        });
 
-    throw new Error("Failed to parse PDF content.");
-  }
+        throw new Error(`Failed to parse PDF content: ${err?.message ?? String(err)}`);
+      }
+    }
 
   const decoder = new TextDecoder("utf-8");
   return decoder.decode(bytes).trim();
