@@ -51,5 +51,9 @@ app.post('/parse', async (req, res) => {
   }
 });
 
+app.get('/', (req, res) => {
+  res.send('parser-service: up');
+});
+
 const port = process.env.PORT ? Number(process.env.PORT) : 3001;
 app.listen(port, () => console.log(`parser-service listening on ${port}`));
