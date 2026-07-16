@@ -27,6 +27,18 @@ export function LogoutButton({
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();
 
+    try {
+      // Clear any Supabase auth tokens that may remain in browser storage.
+      const lsKeys = Object.keys(localStorage || {});
+      lsKeys.forEach((k) => {
+        if (k.startsWith("supabase") || k.startsWith("sb-") || k.includes("auth")) {
+          localStorage.removeItem(k);
+        }
+      });
+    } catch (e) {
+      // ignore storage clearing errors
+    }
+
     router.push("/login");
     router.refresh();
   };

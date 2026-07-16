@@ -10,11 +10,24 @@ import type { ApiError, FileListResponse, FileUploadResponse, UploadedFileMetada
 import {
   ALLOWED_UPLOAD_MIME_TYPES,
   getUploadValidationMessage,
-  isAllowedUploadFile,
-  sanitizeFileName,
-} from "@/validators/file";
+      const errMsg = getErrorMessage(indexError).toLowerCase();
 
-export const dynamic = "force-dynamic";
+      if (isMissingDocumentsTable(indexError as { code?: string; message?: string })) {
+        message = `${file.name} uploaded successfully. You can chat with the attached file now, and full vector search will work after running the `20260411_create_rag_documents.sql` migration.`;
+      } else if (
+        errMsg.includes("cannot find package") ||
+        errMsg.includes("pdf-parse") ||
+        errMsg.includes("pdfjs-dist") ||
+        errMsg.includes("failed to parse pdf") ||
+        errMsg.includes("err_module_not_found") ||
+        errMsg.includes("enoent")
+      ) {
+        // PDF parsing/runtime dependency missing — surface a clear, non-technical message
+        // to the user and avoid rethrowing a server error that could trigger retries.
+        message = `${file.name} uploaded successfully, but the server was unable to parse the file (PDF parsing currently unavailable). Try re-uploading as a .txt or .md file, or try again later.`;
+      } else {
+        message = `${file.name} uploaded successfully, but retrieval indexing is pending. ${getErrorMessage(indexError)}`;
+      }
 
 const STORAGE_BUCKET_NAME = "knowledge-files";
 
