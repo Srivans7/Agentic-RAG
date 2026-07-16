@@ -136,6 +136,34 @@ async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | U
           console.info("ragService.extractDocumentText: diagnostics failed", { diagErr });
         }
 
+        // Try calling the dedicated parser API (statically imports parsers).
+        try {
+          const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://127.0.0.1:3000`;
+          const res = await fetch(`${baseUrl}/api/pdf-parse`, {
+            method: "POST",
+            body: Buffer.from(bytes),
+            headers: { "Content-Type": "application/pdf" },
+          });
+
+          if (res.ok) {
+            try {
+              const json = await res.json();
+              if (json?.text && String(json.text).trim()) {
+                return String(json.text).trim();
+              }
+            } catch (jsonErr) {
+              // eslint-disable-next-line no-console
+              console.info("ragService.extractDocumentText: pdf-parse endpoint returned non-json or empty", { fileName, jsonErr });
+            }
+          } else {
+            // eslint-disable-next-line no-console
+            console.info("ragService.extractDocumentText: pdf-parse endpoint returned non-OK", { fileName, status: res.status });
+          }
+        } catch (fetchErr) {
+          // eslint-disable-next-line no-console
+          console.info("ragService.extractDocumentText: call to internal pdf-parse endpoint failed", { fileName, fetchErr });
+        }
+
         // Use a runtime-evaluated dynamic import to avoid bundlers (Turbopack)
         // statically analyzing and executing `pdf-parse` at build time
         // (which can cause it to read test fixtures like './test/data/...').
