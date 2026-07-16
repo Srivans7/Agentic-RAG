@@ -1,4 +1,5 @@
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
+import { createRequire } from "module";
 import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
@@ -88,9 +89,32 @@ async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | U
         // (which can cause it to read test fixtures like './test/data/...').
         // Wrapping the import in `new Function` prevents static bundling.
         // eslint-disable-next-line no-new-func
-        const dynamicImport: any = Function('specifier', 'return import(specifier)');
+        const dynamicImport: any = Function("specifier", "return import(specifier)");
 
-        const pdfModule = await dynamicImport("pdf-parse");
+        let pdfModule: any;
+
+        try {
+          pdfModule = await dynamicImport("pdf-parse");
+        } catch (importErr) {
+          // If dynamic import fails at runtime (package not resolved by ESM loader),
+          // fall back to CommonJS `require` via `createRequire` which is more
+          // tolerant in some serverless packaging scenarios.
+          try {
+            const require = createRequire(import.meta.url);
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
+            pdfModule = require("pdf-parse");
+          } catch (requireErr) {
+            // Rethrow the original import error with both errors attached for logging.
+            // eslint-disable-next-line no-console
+            console.error("ragService.extractDocumentText: dynamic import and require fallback both failed", {
+              fileName,
+              importError: importErr,
+              requireError: requireErr,
+            });
+            throw importErr;
+          }
+        }
+
         const pdf = (pdfModule as any).default ?? pdfModule;
         const parsed = await pdf(Buffer.from(bytes));
         if (parsed.text && parsed.text.trim()) {
