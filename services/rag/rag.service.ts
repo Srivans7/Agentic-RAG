@@ -289,7 +289,36 @@ export class LangChainRagService {
       throw error ?? new Error("Unable to download the uploaded file from Supabase storage.");
     }
 
-    const text = await extractDocumentText(input.fileName ?? input.storagePath, data);
+    // Normalize downloaded data to an ArrayBuffer so downstream parsing
+    // works consistently across Node, Edge and serverless runtimes where
+    // Supabase storage may return a Blob, Buffer, ReadableStream, or
+    // a Response-like body. Wrapping with `Response` is a reliable
+    // way to obtain an ArrayBuffer from many body types.
+    let normalizedBuffer: ArrayBuffer;
+
+    try {
+      if (typeof (data as any).arrayBuffer === "function") {
+        normalizedBuffer = await (data as any).arrayBuffer();
+      } else {
+        // Fallback: wrap in a Response and extract an ArrayBuffer.
+        // Node 18+ and modern runtimes provide a global `Response`.
+        // This handles ReadableStream, Buffer, and other body types.
+        // eslint-disable-next-line no-undef
+        normalizedBuffer = await new Response(data as any).arrayBuffer();
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("ragService.loadTextFromStorage: failed to normalize downloaded file to ArrayBuffer", {
+        fileName: input.fileName,
+        storagePath: input.storagePath,
+        bucketName,
+        error: err,
+      });
+
+      throw new Error("Unable to read the uploaded file from storage.");
+    }
+
+    const text = await extractDocumentText(input.fileName ?? input.storagePath, normalizedBuffer);
 
 
     if (!text.trim()) {
