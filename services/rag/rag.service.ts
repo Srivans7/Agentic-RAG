@@ -166,7 +166,7 @@ async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | U
           if (full) return full;
 
           // If pdfjs returned empty text, fall through to throw below.
-        } catch (fallbackErr) {
+        } catch (fallbackErr: any) {
           // eslint-disable-next-line no-console
           console.error("ragService.extractDocumentText: pdfjs-dist fallback failed", {
             fileName,
