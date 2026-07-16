@@ -1,7 +1,6 @@
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import pdf from "pdf-parse";
 
 import { env } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -84,6 +83,8 @@ async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | U
 
   if (extension === "pdf") {
     try {
+      const pdfModule = await import("pdf-parse");
+      const pdf = (pdfModule as any).default ?? pdfModule;
       const parsed = await pdf(Buffer.from(bytes));
       return parsed.text?.trim() ?? "";
     } catch (err) {
