@@ -98,33 +98,6 @@ async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | U
       });
     }
 
-    // Fallback: try extracting text with pdfjs-dist if pdf-parse failed or produced no text.
-    try {
-      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.js");
-      const loadingTask = pdfjs.getDocument({ data: Buffer.from(bytes) });
-      const pdfDoc = await loadingTask.promise;
-      const pageTexts: string[] = [];
-
-      for (let i = 1; i <= pdfDoc.numPages; i += 1) {
-        // eslint-disable-next-line no-await-in-loop
-        const page = await pdfDoc.getPage(i);
-        // eslint-disable-next-line no-await-in-loop
-        const content = await page.getTextContent();
-        const strings = content.items.map((item: any) => (item.str ? String(item.str) : ""));
-        pageTexts.push(strings.join(" "));
-      }
-
-      const joined = pageTexts.join("\n\n").trim();
-      if (joined) return joined;
-    } catch (err) {
-      // Log pdfjs failures too.
-      // eslint-disable-next-line no-console
-      console.error("ragService.extractDocumentText: pdfjs fallback failed", {
-        fileName,
-        error: err,
-      });
-    }
-
     throw new Error("Failed to parse PDF content.");
   }
 
