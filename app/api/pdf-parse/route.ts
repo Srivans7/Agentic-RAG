@@ -1,23 +1,53 @@
-import pdfParse from "pdf-parse";
-
 export async function POST(req: Request) {
   try {
     const arrayBuffer = await req.arrayBuffer();
     const bytes = Buffer.from(arrayBuffer);
-
-    // Primary: pdf-parse
+    // Primary: try to load pdf-parse at runtime to avoid build-time
+    // evaluation by Turbopack (some versions read test fixtures at import).
     try {
-      const parsed = await (pdfParse as any)(bytes);
-      if (parsed?.text && String(parsed.text).trim()) {
-        return new Response(JSON.stringify({ text: String(parsed.text).trim() }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
+      // eslint-disable-next-line no-new-func
+      const dynamicImport: any = Function("specifier", "return import(specifier)");
+      let pdfModule: any;
+
+      try {
+        pdfModule = await dynamicImport("pdf-parse");
+      } catch (importErr) {
+        try {
+          const require = (await Promise.resolve()).constructor ? require : undefined; // noop for type clarity
+          // fallback to createRequire in environments that support CJS require
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { createRequire } = await dynamicImport("module");
+          const req = createRequire(import.meta.url);
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          pdfModule = req("pdf-parse");
+        } catch (requireErr) {
+          // eslint-disable-next-line no-console
+          console.info("api/pdf-parse: pdf-parse dynamic import and require fallback both failed", {
+            importErr: (importErr as any)?.message ?? String(importErr),
+            requireErr: (requireErr as any)?.message ?? String(requireErr),
+          });
+          pdfModule = null;
+        }
+      }
+
+      if (pdfModule) {
+        const pdf = (pdfModule as any).default ?? pdfModule;
+        try {
+          const parsed = await pdf(bytes);
+          if (parsed?.text && String(parsed.text).trim()) {
+            return new Response(JSON.stringify({ text: String(parsed.text).trim() }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+        } catch (runErr) {
+          // eslint-disable-next-line no-console
+          console.info("api/pdf-parse: pdf-parse execution failed, falling back to pdfjs", { err: (runErr as any)?.message ?? String(runErr) });
+        }
       }
     } catch (err) {
-      // fall through to pdfjs fallback
       // eslint-disable-next-line no-console
-      console.info("api/pdf-parse: pdf-parse failed, falling back to pdfjs", { err: (err as any)?.message ?? String(err) });
+      console.info("api/pdf-parse: unexpected error while attempting to load pdf-parse", { err: (err as any)?.message ?? String(err) });
     }
 
     // Fallback: pdfjs-dist text extraction (dynamically imported to avoid
