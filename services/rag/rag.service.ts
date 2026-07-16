@@ -516,8 +516,40 @@ export class LangChainRagService {
 
     const vectorStore = await this.getVectorStore();
     const ids = docs.map((_, index) => `${input.fileId}-${index}`);
-
+    // Perform a quick embedding sanity check before adding documents to the
+    // vector store. This surfaces issues where the embedding API returns an
+    // empty vector (which causes errors like "vector must have at least 1
+    // dimension"). If the sample embedding looks invalid we abort early with
+    // a clear error to make debugging easier in server logs.
     try {
+      const embeddingsClient = this.createEmbeddings();
+      let sampleEmbeddings: unknown = null;
+      try {
+        sampleEmbeddings = await embeddingsClient.embedDocuments(docs.slice(0, 1).map((d) => d.pageContent));
+      } catch (embedErr) {
+        // eslint-disable-next-line no-console
+        console.error("ragService.indexUploadedFile: embedding generation failed", { fileId: input.fileId, fileName: input.fileName, error: embedErr });
+        throw embedErr;
+      }
+
+      // Log the shape of the returned embeddings for diagnostics.
+      try {
+        const sampleLengths = Array.isArray(sampleEmbeddings)
+          ? (sampleEmbeddings as any[]).map((v) => (Array.isArray(v) ? v.length : null))
+          : null;
+        // eslint-disable-next-line no-console
+        console.info("ragService.indexUploadedFile: embeddings test", { fileId: input.fileId, sampleLengths });
+
+        if (!Array.isArray(sampleEmbeddings) || (sampleLengths && sampleLengths[0] <= 0)) {
+          throw new Error("Embeddings API returned empty vectors. Check embedding API key, model, and quota.");
+        }
+      } catch (shapeErr) {
+        // bubble up a clear error for server logs
+        // eslint-disable-next-line no-console
+        console.error("ragService.indexUploadedFile: invalid embeddings shape", { fileId: input.fileId, fileName: input.fileName, error: shapeErr });
+        throw shapeErr;
+      }
+
       await vectorStore.addDocuments(docs, { ids });
     } catch (err) {
       // Log indexing failures with context (embedding/vector store issues)
