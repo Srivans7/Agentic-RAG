@@ -13,16 +13,15 @@ export async function POST(req: Request) {
         pdfModule = await dynamicImport("pdf-parse");
       } catch (importErr) {
         try {
-          const require = (await Promise.resolve()).constructor ? require : undefined; // noop for type clarity
-          // fallback to createRequire in environments that support CJS require
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          // Fallback: use `createRequire` from the `module` builtin to load
+          // CommonJS-only packages at runtime without referencing an untyped
+          // `require` identifier (avoids TS 'implicit any' error).
           const { createRequire } = await dynamicImport("module");
           const req = createRequire(import.meta.url);
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
           pdfModule = req("pdf-parse");
         } catch (requireErr) {
           // eslint-disable-next-line no-console
-          console.info("api/pdf-parse: pdf-parse dynamic import and require fallback both failed", {
+          console.info("api/pdf-parse: pdf-parse dynamic import and createRequire fallback both failed", {
             importErr: (importErr as any)?.message ?? String(importErr),
             requireErr: (requireErr as any)?.message ?? String(requireErr),
           });
