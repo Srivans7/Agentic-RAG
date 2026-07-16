@@ -86,17 +86,46 @@ async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | U
       const pdfModule = await import("pdf-parse");
       const pdf = (pdfModule as any).default ?? pdfModule;
       const parsed = await pdf(Buffer.from(bytes));
-      return parsed.text?.trim() ?? "";
+      if (parsed.text && parsed.text.trim()) {
+        return parsed.text.trim();
+      }
+      // If pdf-parse returned empty text, fallthrough to pdfjs fallback.
     } catch (err) {
-      // Log PDF parsing errors with file context for server-side debugging.
       // eslint-disable-next-line no-console
-      console.error("ragService.extractDocumentText: pdf-parse failed", {
+      console.warn("ragService.extractDocumentText: pdf-parse failed, will try pdfjs fallback", {
         fileName,
         error: err,
       });
-
-      throw new Error("Failed to parse PDF content.");
     }
+
+    // Fallback: try extracting text with pdfjs-dist if pdf-parse failed or produced no text.
+    try {
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.js");
+      const loadingTask = pdfjs.getDocument({ data: Buffer.from(bytes) });
+      const pdfDoc = await loadingTask.promise;
+      const pageTexts: string[] = [];
+
+      for (let i = 1; i <= pdfDoc.numPages; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        const page = await pdfDoc.getPage(i);
+        // eslint-disable-next-line no-await-in-loop
+        const content = await page.getTextContent();
+        const strings = content.items.map((item: any) => (item.str ? String(item.str) : ""));
+        pageTexts.push(strings.join(" "));
+      }
+
+      const joined = pageTexts.join("\n\n").trim();
+      if (joined) return joined;
+    } catch (err) {
+      // Log pdfjs failures too.
+      // eslint-disable-next-line no-console
+      console.error("ragService.extractDocumentText: pdfjs fallback failed", {
+        fileName,
+        error: err,
+      });
+    }
+
+    throw new Error("Failed to parse PDF content.");
   }
 
   const decoder = new TextDecoder("utf-8");
