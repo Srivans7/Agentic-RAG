@@ -138,30 +138,33 @@ async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | U
 
         // Try calling the dedicated parser API (statically imports parsers).
         try {
-          const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://127.0.0.1:3000`;
-          const res = await fetch(`${baseUrl}/api/pdf-parse`, {
-            method: "POST",
-            body: Buffer.from(bytes),
-            headers: { "Content-Type": "application/pdf" },
-          });
-
-          if (res.ok) {
-            try {
-              const json = await res.json();
-              if (json?.text && String(json.text).trim()) {
-                return String(json.text).trim();
-              }
-            } catch (jsonErr) {
-              // eslint-disable-next-line no-console
-              console.info("ragService.extractDocumentText: pdf-parse endpoint returned non-json or empty", { fileName, jsonErr });
+          const parserUrl = process.env.PARSER_SERVICE_URL ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}/api/pdf-parse` : `http://127.0.0.1:3000/api/pdf-parse`);
+          // If a dedicated external parser service is provided (PARSER_SERVICE_URL),
+          // call it instead. This service should expose POST /parse returning JSON { text }.
+          if (process.env.PARSER_SERVICE_URL) {
+            const res = await fetch(`${process.env.PARSER_SERVICE_URL.replace(/\/+$/, '')}/parse`, {
+              method: 'POST',
+              body: Buffer.from(bytes),
+              headers: { 'Content-Type': 'application/pdf' },
+            });
+            if (res.ok) {
+              const json = await res.json().catch((e) => ({ text: '' }));
+              if (json?.text && String(json.text).trim()) return String(json.text).trim();
             }
           } else {
-            // eslint-disable-next-line no-console
-            console.info("ragService.extractDocumentText: pdf-parse endpoint returned non-OK", { fileName, status: res.status });
+            const res = await fetch(parserUrl, {
+              method: 'POST',
+              body: Buffer.from(bytes),
+              headers: { 'Content-Type': 'application/pdf' },
+            });
+            if (res.ok) {
+              const json = await res.json().catch((e) => ({ text: '' }));
+              if (json?.text && String(json.text).trim()) return String(json.text).trim();
+            }
           }
         } catch (fetchErr) {
           // eslint-disable-next-line no-console
-          console.info("ragService.extractDocumentText: call to internal pdf-parse endpoint failed", { fileName, fetchErr });
+          console.info('ragService.extractDocumentText: call to parser endpoint failed', { fileName, fetchErr });
         }
 
         // Use a runtime-evaluated dynamic import to avoid bundlers (Turbopack)
