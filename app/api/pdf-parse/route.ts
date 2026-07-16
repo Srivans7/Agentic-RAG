@@ -1,5 +1,4 @@
 import pdfParse from "pdf-parse";
-import * as pdfjs from "pdfjs-dist/legacy/build/pdf.js";
 
 export async function POST(req: Request) {
   try {
@@ -21,9 +20,26 @@ export async function POST(req: Request) {
       console.info("api/pdf-parse: pdf-parse failed, falling back to pdfjs", { err: err?.message ?? String(err) });
     }
 
-    // Fallback: pdfjs-dist text extraction
+    // Fallback: pdfjs-dist text extraction (dynamically imported to avoid
+    // Turbopack/Next.js build-time resolution errors for some pdfjs versions)
     try {
-      const loadingTask = (pdfjs as any).getDocument({ data: bytes });
+      // eslint-disable-next-line no-new-func
+      const dynamicImport: any = Function("specifier", "return import(specifier)");
+      let pdfjs: any;
+      try {
+        pdfjs = (await dynamicImport("pdfjs-dist/legacy/build/pdf.js")).default ?? (await dynamicImport("pdfjs-dist/legacy/build/pdf.js"));
+      } catch (dynErr) {
+        // Try a simpler entry if the legacy path isn't present in the installed package
+        try {
+          pdfjs = (await dynamicImport("pdfjs-dist")).default ?? (await dynamicImport("pdfjs-dist"));
+        } catch (dynErr2) {
+          // eslint-disable-next-line no-console
+          console.error("api/pdf-parse: dynamic import of pdfjs-dist failed", { dynErr, dynErr2 });
+          return new Response(JSON.stringify({ error: "Failed to parse PDF (pdfjs load failed)" }), { status: 500, headers: { "Content-Type": "application/json" } });
+        }
+      }
+
+      const loadingTask = pdfjs.getDocument({ data: bytes });
       const pdfDoc = await loadingTask.promise;
       const numPages = pdfDoc.numPages || 0;
       const extracted: string[] = [];
