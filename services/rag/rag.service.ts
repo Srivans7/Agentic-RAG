@@ -1,5 +1,7 @@
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 import { createRequire } from "module";
+import { readdirSync, existsSync } from "fs";
+import { resolve } from "path";
 import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
@@ -84,6 +86,56 @@ async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | U
 
     if (extension === "pdf") {
       try {
+        // Diagnostic: surface runtime environment to help debug missing-module
+        // issues on Vercel or other serverless platforms. These logs are
+        // intentionally lightweight and safe to leave enabled temporarily.
+        try {
+          // eslint-disable-next-line no-console
+          console.info("ragService.extractDocumentText: diagnostics start", {
+            fileName,
+            cwd: typeof process !== "undefined" ? process.cwd() : null,
+            nodeVersion: typeof process !== "undefined" ? process.versions?.node : null,
+          });
+
+          try {
+            const nmPath = resolve(process.cwd(), "node_modules");
+            const nmExists = existsSync(nmPath);
+            const modulesSample = nmExists ? readdirSync(nmPath).slice(0, 200) : null;
+            // eslint-disable-next-line no-console
+            console.info("ragService.extractDocumentText: node_modules", { nmPath, nmExists, modulesSample });
+          } catch (fsErr) {
+            // eslint-disable-next-line no-console
+            console.info("ragService.extractDocumentText: node_modules check failed", { fileName, error: fsErr });
+          }
+
+          try {
+            const requireForResolve = createRequire(import.meta.url);
+            const pdfParseResolved = (() => {
+              try {
+                return requireForResolve.resolve("pdf-parse");
+              } catch (_) {
+                return null;
+              }
+            })();
+            const pdfjsResolved = (() => {
+              try {
+                return requireForResolve.resolve("pdfjs-dist/legacy/build/pdf.js");
+              } catch (_) {
+                return null;
+              }
+            })();
+
+            // eslint-disable-next-line no-console
+            console.info("ragService.extractDocumentText: resolve", { pdfParseResolved, pdfjsResolved });
+          } catch (resolveErr) {
+            // eslint-disable-next-line no-console
+            console.info("ragService.extractDocumentText: require.resolve check failed", { fileName, error: resolveErr });
+          }
+        } catch (diagErr) {
+          // eslint-disable-next-line no-console
+          console.info("ragService.extractDocumentText: diagnostics failed", { diagErr });
+        }
+
         // Use a runtime-evaluated dynamic import to avoid bundlers (Turbopack)
         // statically analyzing and executing `pdf-parse` at build time
         // (which can cause it to read test fixtures like './test/data/...').
