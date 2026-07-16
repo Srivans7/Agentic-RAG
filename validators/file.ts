@@ -1,5 +1,5 @@
-const ALLOWED_EXTENSIONS = [".md", ".txt"] as const;
-const ALLOWED_MIME_TYPES = ["text/markdown", "text/plain", ""] as const;
+const ALLOWED_EXTENSIONS = [".md", ".txt", ".pdf"] as const;
+const ALLOWED_MIME_TYPES = ["text/markdown", "text/plain", "application/pdf", ""] as const;
 
 export const ALLOWED_UPLOAD_EXTENSIONS = [...ALLOWED_EXTENSIONS];
 export const ALLOWED_UPLOAD_MIME_TYPES = ALLOWED_MIME_TYPES.filter(Boolean);
@@ -25,14 +25,13 @@ export function sanitizeFileName(name: string) {
 export function isAllowedUploadFile(file: Pick<File, "name" | "type">) {
   const extension = getExtension(file.name);
   const mimeType = file.type.toLowerCase();
+  const isExtensionAllowed = ALLOWED_EXTENSIONS.includes(extension as (typeof ALLOWED_EXTENSIONS)[number]);
+  const isMimeAllowed = mimeType === "" || ALLOWED_MIME_TYPES.includes(mimeType as (typeof ALLOWED_MIME_TYPES)[number]);
+  const isPdfByType = mimeType === "application/pdf" || extension === ".pdf";
 
-  return (
-    ALLOWED_EXTENSIONS.includes(extension as (typeof ALLOWED_EXTENSIONS)[number]) &&
-    (mimeType === "" ||
-      ALLOWED_MIME_TYPES.includes(mimeType as (typeof ALLOWED_MIME_TYPES)[number]))
-  );
+  return isExtensionAllowed && (isMimeAllowed || isPdfByType);
 }
 
 export function getUploadValidationMessage(fileName: string) {
-  return `Only ${ALLOWED_EXTENSIONS.join(" and ")} files are supported. \`${fileName}\` is not allowed.`;
+  return `Only ${ALLOWED_EXTENSIONS.join(", ")} files are supported. \`${fileName}\` is not allowed.`;
 }

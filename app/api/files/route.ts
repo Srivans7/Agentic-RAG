@@ -29,6 +29,20 @@ type UploadedFileRow = {
   created_at: string;
 };
 
+function getExtensionForFileName(fileName: string): UploadedFileMetadata["extension"] {
+  const normalizedName = fileName.toLowerCase();
+
+  if (normalizedName.endsWith(".pdf")) {
+    return "pdf";
+  }
+
+  if (normalizedName.endsWith(".md")) {
+    return "md";
+  }
+
+  return "txt";
+}
+
 function mapRowToMetadata(
   row: UploadedFileRow,
   downloadUrl: string | null,
@@ -41,7 +55,7 @@ function mapRowToMetadata(
     mimeType: row.mime_type,
     bucket: row.bucket_name,
     path: row.storage_path,
-    extension: row.file_name.toLowerCase().endsWith(".md") ? "md" : "txt",
+    extension: getExtensionForFileName(row.file_name),
     createdAt: row.created_at,
     downloadUrl,
   };
@@ -80,18 +94,40 @@ async function getAuthenticatedUser() {
 
 async function ensureStorageBucket() {
   const admin = createSupabaseAdminClient();
-  const { error } = await admin.storage.createBucket(STORAGE_BUCKET_NAME, {
+  // Try to create the bucket with sensible defaults. If it already exists,
+  // attempt to ensure the allowed mime types include our supported set.
+  const { error: createError } = await admin.storage.createBucket(STORAGE_BUCKET_NAME, {
     public: false,
     fileSizeLimit: 5 * 1024 * 1024,
     allowedMimeTypes: ALLOWED_UPLOAD_MIME_TYPES,
   });
 
-  if (
-    error &&
-    !error.message.toLowerCase().includes("already exists") &&
-    !error.message.toLowerCase().includes("duplicate")
-  ) {
-    throw error;
+  if (createError) {
+    const msg = String(createError.message ?? "").toLowerCase();
+
+    if (!msg.includes("already exists") && !msg.includes("duplicate")) {
+      throw createError;
+    }
+
+    // If the bucket exists, attempt to update its settings so our allowed
+    // mime types are accepted. Some Supabase projects create the bucket
+    // without the right allowedMimeTypes which causes uploads to be rejected.
+    try {
+      // updateBucket is available in the supabase storage admin API.
+      await admin.storage.updateBucket(STORAGE_BUCKET_NAME, {
+        public: false,
+        fileSizeLimit: 5 * 1024 * 1024,
+        allowedMimeTypes: ALLOWED_UPLOAD_MIME_TYPES,
+      });
+    } catch (updateErr) {
+      // If update fails, log and continue; uploads may still work depending on
+      // bucket settings, but we want to surface the update failure server-side.
+      // eslint-disable-next-line no-console
+      console.warn("ensureStorageBucket: failed to update bucket settings", {
+        bucket: STORAGE_BUCKET_NAME,
+        error: updateErr,
+      });
+    }
   }
 
   return admin;

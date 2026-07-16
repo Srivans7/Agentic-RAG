@@ -23,7 +23,7 @@ class LangChainChatService implements ChatService {
         userId: payload.userId,
         messages: payload.messages,
         model: payload.model,
-        attachedFile: payload.attachedFile,
+        attachedFile: payload.attachedFile ?? (payload.attachments?.[0] ?? null),
         userSystemPrompt,
       });
 

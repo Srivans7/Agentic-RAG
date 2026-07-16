@@ -1,6 +1,7 @@
 import { SupabaseVectorStore } from "@langchain/community/vectorstores/supabase";
 import { ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
+import pdf from "pdf-parse";
 
 import { env } from "@/lib/env";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -70,6 +71,35 @@ function normalizeQueryTerms(query: string) {
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
     .filter((term) => term.length > 2);
+}
+
+function getFileExtension(fileName: string) {
+  return fileName.toLowerCase().split(".").pop() ?? "";
+}
+
+async function extractDocumentText(fileName: string, fileBuffer: ArrayBuffer | Uint8Array | Blob) {
+  const extension = getFileExtension(fileName);
+  const buffer = fileBuffer instanceof Blob ? await fileBuffer.arrayBuffer() : fileBuffer;
+  const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : buffer;
+
+  if (extension === "pdf") {
+    try {
+      const parsed = await pdf(Buffer.from(bytes));
+      return parsed.text?.trim() ?? "";
+    } catch (err) {
+      // Log PDF parsing errors with file context for server-side debugging.
+      // eslint-disable-next-line no-console
+      console.error("ragService.extractDocumentText: pdf-parse failed", {
+        fileName,
+        error: err,
+      });
+
+      throw new Error("Failed to parse PDF content.");
+    }
+  }
+
+  const decoder = new TextDecoder("utf-8");
+  return decoder.decode(bytes).trim();
 }
 
 function rankChunksByQueryTerms(
@@ -235,18 +265,39 @@ export class LangChainRagService {
     }
   }
 
-  async loadTextFromStorage(input: Pick<RagIndexInput, "storagePath" | "bucketName">) {
+  async loadTextFromStorage(
+  input: Pick<RagIndexInput, "storagePath" | "bucketName"> & { fileName?: string },
+) {
     const admin = createSupabaseAdminClient();
     const bucketName = input.bucketName ?? STORAGE_BUCKET_NAME;
     const { data, error } = await admin.storage.from(bucketName).download(input.storagePath);
 
     if (error || !data) {
+      // Log download failures for easier debugging in server logs.
+      // Include context so we can correlate with uploaded_files rows and user actions.
+      // eslint-disable-next-line no-console
+      console.error("ragService.loadTextFromStorage: failed to download file", {
+        bucketName,
+        storagePath: input.storagePath,
+        fileName: input.fileName,
+        error: error ?? null,
+      });
+
       throw error ?? new Error("Unable to download the uploaded file from Supabase storage.");
     }
 
-    const text = await data.text();
+    const text = await extractDocumentText(input.fileName ?? input.storagePath, data);
+
 
     if (!text.trim()) {
+      // Log unexpected empty extractions (e.g., binary PDF parsing failures)
+      // eslint-disable-next-line no-console
+      console.error("ragService.loadTextFromStorage: extracted text is empty", {
+        fileName: input.fileName,
+        storagePath: input.storagePath,
+        bucketName,
+      });
+
       throw new Error("The uploaded file is empty.");
     }
 
@@ -254,7 +305,11 @@ export class LangChainRagService {
   }
 
   async indexUploadedFile(input: RagIndexInput): Promise<RagIndexResult> {
-    const rawText = await this.loadTextFromStorage(input);
+    const rawText = await this.loadTextFromStorage({
+      storagePath: input.storagePath,
+      bucketName: input.bucketName,
+      fileName: input.fileName,
+    });
     const docs = await this.splitter.createDocuments([rawText], [
       {
         userId: input.userId,
@@ -268,7 +323,22 @@ export class LangChainRagService {
     const vectorStore = await this.getVectorStore();
     const ids = docs.map((_, index) => `${input.fileId}-${index}`);
 
-    await vectorStore.addDocuments(docs, { ids });
+    try {
+      await vectorStore.addDocuments(docs, { ids });
+    } catch (err) {
+      // Log indexing failures with context (embedding/vector store issues)
+      // eslint-disable-next-line no-console
+      console.error("ragService.indexUploadedFile: failed to add documents to vector store", {
+        fileId: input.fileId,
+        fileName: input.fileName,
+        storagePath: input.storagePath,
+        bucketName: input.bucketName,
+        chunkCount: docs.length,
+        error: err,
+      });
+
+      throw err;
+    }
 
     return {
       fileId: input.fileId,
@@ -285,17 +355,31 @@ export class LangChainRagService {
     const vectorStore = await this.getVectorStore(filter);
     const queryText = input.fileName ? `${input.query}\nAttached file: ${input.fileName}` : input.query;
     const queryEmbedding = await this.createEmbeddings().embedQuery(queryText);
-    const matches = (await vectorStore.similaritySearchVectorWithScore(
-      queryEmbedding,
-      input.matchCount ?? 4,
-      filter,
-    )) as Array<[{ pageContent: string; metadata: Record<string, unknown> }, number]>;
+    try {
+      const matches = (await vectorStore.similaritySearchVectorWithScore(
+        queryEmbedding,
+        input.matchCount ?? 4,
+        filter,
+      )) as Array<[{ pageContent: string; metadata: Record<string, unknown> }, number]>;
 
-    return matches.map(([doc, score]) => ({
-      content: doc.pageContent,
-      metadata: doc.metadata as Record<string, unknown>,
-      score,
-    }));
+      return matches.map(([doc, score]) => ({
+        content: doc.pageContent,
+        metadata: doc.metadata as Record<string, unknown>,
+        score,
+      }));
+    } catch (err) {
+      // Log retrieval failures (vector query, permission, or query function issues)
+      // eslint-disable-next-line no-console
+      console.error("ragService.retrieveRelevantChunks: vector similarity search failed", {
+        userId: input.userId,
+        fileId: input.fileId ?? null,
+        fileName: input.fileName ?? null,
+        query: input.query,
+        error: err,
+      });
+
+      throw err;
+    }
   }
 
   async answerQuestionFromFile(
@@ -316,6 +400,7 @@ export class LangChainRagService {
     const rawText = await this.loadTextFromStorage({
       storagePath: input.storagePath,
       bucketName: input.bucketName,
+      fileName: input.fileName ?? input.storagePath,
     });
 
     const matches = await this.selectRelevantTextChunks({

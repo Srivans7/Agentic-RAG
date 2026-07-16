@@ -30,7 +30,7 @@ function toSummary(conversation: StoredConversation): ChatConversationSummary {
 
 function createAssistantMessage(
   content: string,
-  metadata?: Pick<ChatMessage, "sources" | "usedTools" | "steps">,
+  metadata?: Pick<ChatMessage, "sources" | "usedTools" | "steps" | "attachments">,
 ): ChatMessage {
   return {
     id: crypto.randomUUID(),
@@ -40,6 +40,7 @@ function createAssistantMessage(
     sources: metadata?.sources,
     usedTools: metadata?.usedTools,
     steps: metadata?.steps,
+    attachments: metadata?.attachments,
   };
 }
 
@@ -293,6 +294,7 @@ export function useChat(initialMessages: ChatMessage[] = []) {
           role: "assistant",
           content: "",
           createdAt,
+          attachments: attachedFile ? [attachedFile] : undefined,
         },
       ]);
 
@@ -433,6 +435,7 @@ export function useChat(initialMessages: ChatMessage[] = []) {
           role: "user",
           content,
           createdAt,
+          attachments: options.attachedFile ? [options.attachedFile] : undefined,
         };
 
         const nextMessages = [...activeConversation.messages, userMessage];

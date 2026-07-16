@@ -137,6 +137,8 @@ export async function POST(request: Request) {
               conversationId,
               messages: normalizedMessages,
               userId: user.id,
+              attachedFile: body.attachedFile ?? (Array.isArray(body.attachments) ? body.attachments[0] : null),
+              attachments: Array.isArray(body.attachments) ? body.attachments : undefined,
             });
 
             const finalPayload: ChatResponseBody = {

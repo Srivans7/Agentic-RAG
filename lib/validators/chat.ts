@@ -37,7 +37,7 @@ function isUploadedFileMetadata(value: unknown): value is UploadedFileMetadata {
     typeof candidate.mimeType === "string" &&
     typeof candidate.bucket === "string" &&
     typeof candidate.path === "string" &&
-    (candidate.extension === "md" || candidate.extension === "txt") &&
+    (candidate.extension === "md" || candidate.extension === "txt" || candidate.extension === "pdf") &&
     typeof candidate.createdAt === "string" &&
     (candidate.downloadUrl === null || typeof candidate.downloadUrl === "string")
   );
@@ -51,6 +51,10 @@ export function isChatRequestBody(value: unknown): value is ChatRequestBody {
   const candidate = value as Partial<ChatRequestBody>;
   const hasMessages = Array.isArray(candidate.messages) && candidate.messages.every(isChatMessage);
   const hasMessage = typeof candidate.message === "string" && candidate.message.trim().length > 0;
+  const hasValidAttachments =
+    candidate.attachments === undefined ||
+    candidate.attachments === null ||
+    (Array.isArray(candidate.attachments) && candidate.attachments.every(isUploadedFileMetadata));
 
   return (
     (hasMessages || hasMessage) &&
@@ -59,6 +63,7 @@ export function isChatRequestBody(value: unknown): value is ChatRequestBody {
     (candidate.model === undefined || typeof candidate.model === "string") &&
     (candidate.attachedFile === undefined ||
       candidate.attachedFile === null ||
-      isUploadedFileMetadata(candidate.attachedFile))
+      isUploadedFileMetadata(candidate.attachedFile)) &&
+    hasValidAttachments
   );
 }

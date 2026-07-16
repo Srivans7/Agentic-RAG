@@ -210,6 +210,7 @@ class LangChainToolAgentService {
     messages: ChatMessage[];
     model?: string;
     attachedFile?: UploadedFileMetadata | null;
+    attachments?: UploadedFileMetadata[];
     userSystemPrompt?: string | null;
   }): Promise<AgentRunResult> {
     const conversationId = input.conversationId ?? randomUUID();
@@ -236,7 +237,7 @@ class LangChainToolAgentService {
     const tools = createAgentTools({
       userId: input.userId,
       model: input.model,
-      attachedFile: input.attachedFile,
+      attachedFile: input.attachedFile ?? input.attachments?.[0] ?? null,
     });
 
     const agent = createToolCallingAgent({

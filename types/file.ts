@@ -1,3 +1,5 @@
+export type SupportedFileExtension = "md" | "txt" | "pdf";
+
 export interface UploadedFileMetadata {
   id: string;
   userId: string;
@@ -6,7 +8,7 @@ export interface UploadedFileMetadata {
   mimeType: string;
   bucket: string;
   path: string;
-  extension: "md" | "txt";
+  extension: SupportedFileExtension;
   createdAt: string;
   downloadUrl: string | null;
 }
