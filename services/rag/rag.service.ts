@@ -534,13 +534,13 @@ export class LangChainRagService {
 
       // Log the shape of the returned embeddings for diagnostics.
       try {
-        const sampleLengths = Array.isArray(sampleEmbeddings)
+        const sampleLengths: Array<number | null> | null = Array.isArray(sampleEmbeddings)
           ? (sampleEmbeddings as any[]).map((v) => (Array.isArray(v) ? v.length : null))
           : null;
         // eslint-disable-next-line no-console
         console.info("ragService.indexUploadedFile: embeddings test", { fileId: input.fileId, sampleLengths });
 
-        if (!Array.isArray(sampleEmbeddings) || (sampleLengths && sampleLengths[0] <= 0)) {
+        if (!Array.isArray(sampleEmbeddings) || sampleLengths === null || sampleLengths[0] === null || sampleLengths[0]! <= 0) {
           throw new Error("Embeddings API returned empty vectors. Check embedding API key, model, and quota.");
         }
       } catch (shapeErr) {
